@@ -9,6 +9,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, strong) IBOutlet NSButton *proxiedDeviceIsActiveRadioButton;
 @property(nonatomic, strong) IBOutlet NSButton *userIsActiveRadioButton;
 @property(nonatomic, strong) IBOutlet NSButton *alwaysRadioButton;
+@property(nonatomic, strong) IBOutlet NSSegmentedControl *deviceSelector;
 
 - (void)awakeFromNib;
 - (IBAction)deviceNameEntered:(id)sender;
@@ -17,6 +18,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (IBAction)proxiedDeviceIsActiveConditionSelected:(id)sender;
 - (IBAction)userIsActiveConditionSelected:(id)sender;
 - (IBAction)alwaysConditionSelected:(id)sender;
+- (IBAction)deviceSelectorChanged:(id)sender;
 
 @end
 

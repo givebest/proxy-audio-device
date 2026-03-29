@@ -19,13 +19,23 @@ enum {
     kObjectID_Volume_Output_L = 5,
     kObjectID_Volume_Output_R = 6,
     kObjectID_Mute_Output_Master = 7,
-    kObjectID_DataSource_Output_Master = 8
+    kObjectID_DataSource_Output_Master = 8,
+    kObjectID_Device2 = 9,
+    kObjectID_Stream_Output2 = 10,
+    kObjectID_Volume_Output2_L = 11,
+    kObjectID_Volume_Output2_R = 12,
+    kObjectID_Mute_Output2_Master = 13,
+    kObjectID_DataSource_Output2_Master = 14,
+    kObjectID_Box2 = 15
 };
 
 #define kPlugIn_BundleID "net.briankendall.ProxyAudioDevice"
 #define kBox_UID "ProxyAudioBox_UID"
+#define kBox2_UID "ProxyAudioBox2_UID"
 #define kDevice_UID "ProxyAudioDevice_UID"
 #define kDevice_ModelUID "ProxyAudioDevice_ModelUID"
+#define kDevice2_UID "ProxyAudioDevice2_UID"
+#define kDevice2_ModelUID "ProxyAudioDevice2_ModelUID"
 #define kOutputDeviceDefaultBufferFrameSize 512
 #define kOutputDeviceMinBufferFrameSize 4
 #define kOutputDeviceDefaultActiveCondition ActiveCondition::userActive
@@ -35,8 +45,9 @@ class ProxyAudioDevice {
     enum class ConfigType { none, outputDevice, outputDeviceBufferFrameSize, deviceName, deviceActiveCondition };
     enum class ActiveCondition { proxiedDeviceActive = 0, userActive = 1, always = 2 };
 
-    ProxyAudioDevice() : inputIOIsActive(false) {};
+    ProxyAudioDevice() : inputIOIsActive(false), inputIOIsActive2(false) {};
     AudioDevice findTargetOutputAudioDevice();
+    AudioDevice findTargetOutputAudioDevice2();
     static int outputDeviceAliveListenerStatic(AudioObjectID inObjectID,
                                                UInt32 inNumberAddresses,
                                                const AudioObjectPropertyAddress *inAddresses,
@@ -44,6 +55,13 @@ class ProxyAudioDevice {
     int outputDeviceAliveListener(AudioObjectID inObjectID,
                                   UInt32 inNumberAddresses,
                                   const AudioObjectPropertyAddress *inAddresses);
+    static int outputDeviceAliveListenerStatic2(AudioObjectID inObjectID,
+                                                UInt32 inNumberAddresses,
+                                                const AudioObjectPropertyAddress *inAddresses,
+                                                void *inClientData);
+    int outputDeviceAliveListener2(AudioObjectID inObjectID,
+                                   UInt32 inNumberAddresses,
+                                   const AudioObjectPropertyAddress *inAddresses);
     static int outputDeviceSampleRateListenerStatic(AudioObjectID inObjectID,
                                                     UInt32 inNumberAddresses,
                                                     const AudioObjectPropertyAddress *inAddresses,
@@ -51,9 +69,19 @@ class ProxyAudioDevice {
     int outputDeviceSampleRateListener(AudioObjectID inObjectID,
                                        UInt32 inNumberAddresses,
                                        const AudioObjectPropertyAddress *inAddresses);
+    static int outputDeviceSampleRateListenerStatic2(AudioObjectID inObjectID,
+                                                     UInt32 inNumberAddresses,
+                                                     const AudioObjectPropertyAddress *inAddresses,
+                                                     void *inClientData);
+    int outputDeviceSampleRateListener2(AudioObjectID inObjectID,
+                                        UInt32 inNumberAddresses,
+                                        const AudioObjectPropertyAddress *inAddresses);
     void updateOutputDeviceStartedState();
+    void updateOutputDeviceStartedState2();
     void matchOutputDeviceSampleRateNoLock();
     void matchOutputDeviceSampleRate();
+    void matchOutputDeviceSampleRateNoLock2();
+    void matchOutputDeviceSampleRate2();
     static int devicesListenerProcStatic(AudioObjectID inObjectID,
                                          UInt32 inNumberAddresses,
                                          const AudioObjectPropertyAddress *inAddresses,
@@ -63,10 +91,15 @@ class ProxyAudioDevice {
                             const AudioObjectPropertyAddress *inAddresses);
     void setupAudioDevicesListener();
     void setupTargetOutputDevice();
+    void setupTargetOutputDevice2();
     void initializeOutputDevice();
+    void initializeOutputDevice2();
     void deinitializeOutputDeviceNoLock();
     void deinitializeOutputDevice();
+    void deinitializeOutputDeviceNoLock2();
+    void deinitializeOutputDevice2();
     void resetInputData();
+    void resetInputData2();
     static OSStatus outputDeviceIOProcStatic(AudioDeviceID inDevice,
                                              const AudioTimeStamp *inNow,
                                              const AudioBufferList *inInputData,
@@ -80,6 +113,19 @@ class ProxyAudioDevice {
                                 const AudioTimeStamp *inInputTime,
                                 AudioBufferList *outOutputData,
                                 const AudioTimeStamp *inOutputTime);
+    static OSStatus outputDeviceIOProcStatic2(AudioDeviceID inDevice,
+                                              const AudioTimeStamp *inNow,
+                                              const AudioBufferList *inInputData,
+                                              const AudioTimeStamp *inInputTime,
+                                              AudioBufferList *outOutputData,
+                                              const AudioTimeStamp *inOutputTime,
+                                              void *inClientData);
+    OSStatus outputDeviceIOProc2(AudioDeviceID inDevice,
+                                 const AudioTimeStamp *inNow,
+                                 const AudioBufferList *inInputData,
+                                 const AudioTimeStamp *inInputTime,
+                                 AudioBufferList *outOutputData,
+                                 const AudioTimeStamp *inOutputTime);
     void calculateVolumeFactors(Float32 volumeL,
                                 Float32 volumeR,
                                 bool mute,
@@ -89,15 +135,25 @@ class ProxyAudioDevice {
     void parseConfigurationString(CFStringRef configString, ConfigType &action, CFStringRef &value);
     void setConfigurationValue(ConfigType action, CFStringRef value);
     CFStringRef copyConfigurationValue(ConfigType action);
+    void setConfigurationValue2(ConfigType action, CFStringRef value);
+    CFStringRef copyConfigurationValue2(ConfigType action);
     CFStringRef copyDeviceNameFromStorage();
     void setDeviceName(CFStringRef newName);
+    CFStringRef copyDeviceName2FromStorage();
+    void setDeviceName2(CFStringRef newName);
     CFStringRef copyDefaultProxyOutputDeviceUID();
     CFStringRef copyOutputDeviceUIDFromStorage();
     void setOutputDevice(CFStringRef deviceUID);
+    CFStringRef copyOutputDeviceUID2FromStorage();
+    void setOutputDevice2(CFStringRef deviceUID);
     UInt32 retrieveOutputDeviceBufferFrameSizeFromStorage();
     void setOutputDeviceBufferFrameSize(UInt32 size);
+    UInt32 retrieveOutputDevice2BufferFrameSizeFromStorage();
+    void setOutputDevice2BufferFrameSize(UInt32 size);
     ActiveCondition retrieveOutputDeviceActiveConditionFromStorage();
     void setOutputDeviceActiveCondition(ActiveCondition newActiveCondition);
+    ActiveCondition retrieveOutputDevice2ActiveConditionFromStorage();
+    void setOutputDevice2ActiveCondition(ActiveCondition newActiveCondition);
 
     static ProxyAudioDevice *deviceForDriver(void *inDriver);
 
@@ -519,6 +575,44 @@ class ProxyAudioDevice {
     const UInt32 gDevice_BytesPerFrameInChannel = 4;
     const UInt32 gDevice_ChannelsPerFrame = 2;
     const UInt32 gDevice_SafetyOffset = 0;
+
+    // Device 2 state
+    CAMutex stateMutex2 = CAMutex("ProxyAudioStateMutex2");
+    CAMutex IOMutex2 = CAMutex("ProxyAudioIOMutex2");
+    CAMutex outputDeviceMutex2 = CAMutex("ProxyAudioOutputDeviceMutex2");
+    CAMutex getZeroTimestampMutex2 = CAMutex("ProxyAudioGetZeroTimestampMutex2");
+    AudioRingBuffer *inputBuffer2 = NULL;
+    Byte *workBuffer2 = NULL;
+    AudioDevice outputDevice2;
+    bool outputDeviceReady2 = false;
+    std::atomic_bool inputIOIsActive2;
+    Float64 lastInputFrameTime2 = -1;
+    Float64 lastInputBufferFrameSize2 = -1;
+    Float64 inputOutputSampleDelta2 = -1;
+    Float64 inputFinalFrameTime2 = -1;
+    int inputCycleCount2 = 0;
+    ConfigType nextConfigurationToRead2 = ConfigType::none;
+    pid_t configuratorPid2 = 0;
+    CFStringRef deviceName2 = NULL;
+    CFStringRef boxName2 = NULL;
+    CFStringRef outputDeviceUID2 = NULL;
+    UInt32 outputDeviceBufferFrameSize2 = kOutputDeviceDefaultBufferFrameSize;
+    SInt64 smallestFramesToBufferEnd2 = -1;
+    Float64 outputAccumulatedRateRatio2 = 0.0;
+    UInt64 outputAccumulatedRateRatioSamples2 = 0;
+    ActiveCondition outputDeviceActiveCondition2 = ActiveCondition::userActive;
+    Boolean gBox2_Acquired = true;
+    Float64 gDevice2_SampleRate = 44100.0;
+    UInt64 gDevice2_IOIsRunning = 0;
+    Float64 gDevice2_HostTicksPerFrame = 0.0;
+    UInt64 gDevice2_NumberTimeStamps = 0;
+    Float64 gDevice2_AnchorSampleTime = 0.0;
+    Float64 gDevice2_ElapsedTicks = 0.0;
+    UInt64 gDevice2_AnchorHostTime = 0;
+    bool gStream_Output2_IsActive = true;
+    Float32 gVolume_Output2_L_Value = 0.0;
+    Float32 gVolume_Output2_R_Value = 0.0;
+    bool gMute_Output2_Mute = false;
 };
 
 extern "C" void *ProxyAudio_Create(CFAllocatorRef inAllocator, CFUUIDRef inRequestedTypeUUID);

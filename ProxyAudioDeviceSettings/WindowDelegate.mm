@@ -12,9 +12,11 @@ int onDevicesChanged(AudioObjectID inObjectID,
 @implementation WindowDelegate {
     std::vector<AudioDeviceID> currentDeviceList;
     int initializationAttemptInterval;
+    int selectedDevice; // 1 or 2
 }
 
 - (void)awakeFromNib {
+    selectedDevice = 1;
     self.deviceNameTextField.stringValue = NSLocalizedString(@"< Loading... >", nil);
     self.deviceNameTextField.enabled = NO;
     self.outputDeviceComboBox.enabled = NO;
@@ -27,41 +29,38 @@ int onDevicesChanged(AudioObjectID inObjectID,
 }
 
 - (void)keepTryingToInitializeUntilSuccess {
-    // For some reason, sometimes when the app launches right after the system boots we'll get bunk data
-    // for all of the connected audio devices. If that happens then we'll try to initialize again after
-    // a few seconds. We're initially waiting three seconds because that seems to work. Using less time
-    // can actually cause the audio server to crash, so we want to be careful not to query it too often!
     bool success = [self initialize];
-    
+
     if (!success) {
         NSLog(@"NB: failed to initialize, will try again in a sec...");
         [NSTimer scheduledTimerWithTimeInterval:initializationAttemptInterval target:self selector:@selector(keepTryingToInitializeUntilSuccess) userInfo:nil repeats:NO];
-        // Increase the length of time between attempting to initialize by two seconds each time, just to be safe:
         initializationAttemptInterval += 2;
     }
+}
+
+- (CFStringRef)currentBoxUID {
+    return selectedDevice == 2 ? CFSTR(kBox2_UID) : CFSTR(kBox_UID);
 }
 
 - (bool)initialize {
     if (![self setCurrentProcessAsConfigurator]) {
         return false;
     }
-    
+
     self.deviceNameTextField.stringValue = [self currentDeviceName];
-    
+
     if (![self proxyAudioDeviceAvailable]) {
-        // It's expected that we won't find the Proxy Audio Device if it's not installed, so this
-        // technically isn't a failure case where we'd want to try initializing the app again.
         return true;
     }
-    
+
     if (![self refreshOutputDevices]) {
         return false;
     }
-    
+
     if (![self setupListenerForCurrentAudioDevices]) {
         return false;
     }
-    
+
     [self.bufferSizeComboBox selectItemWithObjectValue:[self currentOutputDeviceBufferFrameSize]];
     self.deviceNameTextField.enabled = YES;
     self.outputDeviceComboBox.enabled = YES;
@@ -90,20 +89,29 @@ int onDevicesChanged(AudioObjectID inObjectID,
 }
 
 - (bool)setCurrentProcessAsConfigurator {
-    AudioDeviceID proxyAudioBox = AudioDevice::audioDeviceIDForBoxUID(CFSTR(kBox_UID));
-    
-    if (proxyAudioBox == kAudioObjectUnknown) {
+    // Register with both boxes so both devices recognize this process as configurator
+    AudioDeviceID box1 = AudioDevice::audioDeviceIDForBoxUID(CFSTR(kBox_UID));
+    AudioDeviceID box2 = AudioDevice::audioDeviceIDForBoxUID(CFSTR(kBox2_UID));
+
+    if (box1 == kAudioObjectUnknown && box2 == kAudioObjectUnknown) {
         NSLog(@"Error: unable to find proxy audio device");
-        // It's expected that we won't find the Proxy Audio Device if it's not installed, so this
-        // technically isn't a failure case where we'd want to try initializing the app again.
         return true;
     }
-    
-    if (!AudioDevice::setIdentifyValue(proxyAudioBox, getpid())) {
-        NSLog(@"Error: unable to set current process as configurator");
-        return false;
+
+    if (box1 != kAudioObjectUnknown) {
+        if (!AudioDevice::setIdentifyValue(box1, getpid())) {
+            NSLog(@"Error: unable to set current process as configurator for device 1");
+            return false;
+        }
     }
-    
+
+    if (box2 != kAudioObjectUnknown) {
+        if (!AudioDevice::setIdentifyValue(box2, getpid())) {
+            NSLog(@"Error: unable to set current process as configurator for device 2");
+            return false;
+        }
+    }
+
     return true;
 }
 
@@ -122,7 +130,7 @@ int onDevicesChanged(AudioObjectID inObjectID,
 
 - (bool)setupListenerForCurrentAudioDevices {
     AudioObjectPropertyAddress listenerPropertyAddress = {
-        kAudioHardwarePropertyDevices, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMaster};
+        kAudioHardwarePropertyDevices, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMain};
     OSStatus err =
         AudioObjectAddPropertyListener(kAudioObjectSystemObject, &listenerPropertyAddress, &onDevicesChanged, (__bridge_retained void *)self);
 
@@ -130,19 +138,23 @@ int onDevicesChanged(AudioObjectID inObjectID,
         NSLog(@"Error: could not set up listener for audio devices changing");
         return false;
     }
-    
+
     return true;
 }
 
 - (bool)proxyAudioDeviceAvailable {
-    return AudioDevice::audioDeviceIDForBoxUID(CFSTR(kBox_UID)) != kAudioObjectUnknown;
+    return AudioDevice::audioDeviceIDForBoxUID(CFSTR(kBox_UID)) != kAudioObjectUnknown ||
+           AudioDevice::audioDeviceIDForBoxUID(CFSTR(kBox2_UID)) != kAudioObjectUnknown;
 }
 
 - (NSString *)currentDeviceName {
-    AudioDeviceID proxyAudioBox = AudioDevice::audioDeviceIDForBoxUID(CFSTR(kBox_UID));
-    AudioDevice::setIdentifyValue(proxyAudioBox, -((SInt32)ProxyAudioDevice::ConfigType::deviceName));
-    NSString *result = (__bridge_transfer NSString *)AudioDevice::copyObjectName(proxyAudioBox);
-    
+    AudioDeviceID box = AudioDevice::audioDeviceIDForBoxUID([self currentBoxUID]);
+    if (box == kAudioObjectUnknown) {
+        return NSLocalizedString(@"< Proxy Audio Device not found >", nil);
+    }
+    AudioDevice::setIdentifyValue(box, -((SInt32)ProxyAudioDevice::ConfigType::deviceName));
+    NSString *result = (__bridge_transfer NSString *)AudioDevice::copyObjectName(box);
+
     return result ? result : NSLocalizedString(@"< Proxy Audio Device not found >", nil);
 }
 
@@ -150,22 +162,24 @@ int onDevicesChanged(AudioObjectID inObjectID,
 #pragma unused(sender)
     NSString *newName = [self.deviceNameTextField.stringValue
         stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-    
+
     if (newName.length == 0) {
         self.deviceNameTextField.stringValue = [self currentDeviceName];
         return;
     }
 
-    AudioDeviceID proxyAudioBox = AudioDevice::audioDeviceIDForBoxUID(CFSTR(kBox_UID));
-    AudioDevice::setObjectName(proxyAudioBox,
+    AudioDeviceID box = AudioDevice::audioDeviceIDForBoxUID([self currentBoxUID]);
+    if (box == kAudioObjectUnknown) return;
+    AudioDevice::setObjectName(box,
                                (__bridge_retained CFStringRef)[NSString stringWithFormat:@"deviceName=%@", newName]);
 }
 
 - (AudioDeviceID)currentOutputDevice {
-    AudioDeviceID proxyAudioBox = AudioDevice::audioDeviceIDForBoxUID(CFSTR(kBox_UID));
-    AudioDevice::setIdentifyValue(proxyAudioBox, -((SInt32)ProxyAudioDevice::ConfigType::outputDevice));
-    NSString *outputDeviceUID = (__bridge_transfer NSString *)AudioDevice::copyObjectName(proxyAudioBox);
-    
+    AudioDeviceID box = AudioDevice::audioDeviceIDForBoxUID([self currentBoxUID]);
+    if (box == kAudioObjectUnknown) return kAudioObjectUnknown;
+    AudioDevice::setIdentifyValue(box, -((SInt32)ProxyAudioDevice::ConfigType::outputDevice));
+    NSString *outputDeviceUID = (__bridge_transfer NSString *)AudioDevice::copyObjectName(box);
+
     return AudioDevice::audioDeviceIDForDeviceUID((__bridge_retained CFStringRef)outputDeviceUID);
 }
 
@@ -174,57 +188,59 @@ int onDevicesChanged(AudioObjectID inObjectID,
     [self.outputDeviceComboBox removeAllItems];
     currentDeviceList = AudioDevice::devicesWithOutputCapabilitiesThatAreNotProxyAudioDevice();
     AudioDeviceID outputDevice = [self currentOutputDevice];
-    
+
     for (unsigned int i = 0; i < currentDeviceList.size(); ++i) {
         NSString *deviceName = (__bridge_transfer NSString *)AudioDevice::copyObjectName(currentDeviceList[i]);
-        
+
         if (!deviceName) {
             NSLog(@"Note: got null device name for audio device with device with ID: %d", currentDeviceList[i]);
             continue;
         }
-        
+
         [self.outputDeviceComboBox addItemWithObjectValue:deviceName];
-        
+
         if (outputDevice == currentDeviceList[i]) {
             [self.outputDeviceComboBox selectItemAtIndex:i];
         }
-        
+
         success = true;
     }
-    
+
     if (!success) {
         NSLog(@"Error: failed to get any information about current output devices!");
     }
-    
+
     return success;
 }
 
 - (IBAction)outputDeviceSelected:(id)sender {
 #pragma unused(sender)
     unsigned long index = (unsigned long)self.outputDeviceComboBox.indexOfSelectedItem;
-    
+
     if (index < 0 || index >= currentDeviceList.size()) {
         NSLog(@"Error: got invalid selection index when trying to set output device");
         return;
     }
 
     NSString *uid = (__bridge_transfer NSString *)AudioDevice::copyDeviceUID(currentDeviceList[index]);
-    
+
     if (!uid) {
         NSLog(@"Error: got invalid UID when trying to set output device");
         return;
     }
 
-    AudioDeviceID proxyAudioBox = AudioDevice::audioDeviceIDForBoxUID(CFSTR(kBox_UID));
-    AudioDevice::setObjectName(proxyAudioBox,
+    AudioDeviceID box = AudioDevice::audioDeviceIDForBoxUID([self currentBoxUID]);
+    if (box == kAudioObjectUnknown) return;
+    AudioDevice::setObjectName(box,
                                (__bridge_retained CFStringRef)[NSString stringWithFormat:@"outputDevice=%@", uid]);
 }
 
 - (NSString *)currentOutputDeviceBufferFrameSize {
-    AudioDeviceID proxyAudioBox = AudioDevice::audioDeviceIDForBoxUID(CFSTR(kBox_UID));
-    AudioDevice::setIdentifyValue(proxyAudioBox, -((SInt32)ProxyAudioDevice::ConfigType::outputDeviceBufferFrameSize));
-    NSString *result = (__bridge_transfer NSString *)AudioDevice::copyObjectName(proxyAudioBox);
-    
+    AudioDeviceID box = AudioDevice::audioDeviceIDForBoxUID([self currentBoxUID]);
+    if (box == kAudioObjectUnknown) return @"";
+    AudioDevice::setIdentifyValue(box, -((SInt32)ProxyAudioDevice::ConfigType::outputDeviceBufferFrameSize));
+    NSString *result = (__bridge_transfer NSString *)AudioDevice::copyObjectName(box);
+
     return result ? result : @"";
 }
 
@@ -237,25 +253,28 @@ int onDevicesChanged(AudioObjectID inObjectID,
         return;
     }
 
-    AudioDeviceID proxyAudioBox = AudioDevice::audioDeviceIDForBoxUID(CFSTR(kBox_UID));
+    AudioDeviceID box = AudioDevice::audioDeviceIDForBoxUID([self currentBoxUID]);
+    if (box == kAudioObjectUnknown) return;
     AudioDevice::setObjectName(
-        proxyAudioBox,
+        box,
         (__bridge_retained CFStringRef)
             [NSString stringWithFormat:@"outputDeviceBufferFrameSize=%@", newBufferFrameSizeString]);
 }
 
 - (ProxyAudioDevice::ActiveCondition)currentOutputDeviceActiveCondition {
-    AudioDeviceID proxyAudioBox = AudioDevice::audioDeviceIDForBoxUID(CFSTR(kBox_UID));
-    AudioDevice::setIdentifyValue(proxyAudioBox, -((SInt32)ProxyAudioDevice::ConfigType::deviceActiveCondition));
-    NSString *result = (__bridge_transfer NSString *)AudioDevice::copyObjectName(proxyAudioBox);
+    AudioDeviceID box = AudioDevice::audioDeviceIDForBoxUID([self currentBoxUID]);
+    if (box == kAudioObjectUnknown) return ProxyAudioDevice::ActiveCondition::userActive;
+    AudioDevice::setIdentifyValue(box, -((SInt32)ProxyAudioDevice::ConfigType::deviceActiveCondition));
+    NSString *result = (__bridge_transfer NSString *)AudioDevice::copyObjectName(box);
 
     return (ProxyAudioDevice::ActiveCondition)[result intValue];
 }
 
 - (void)setCurrentOutputDeviceActiveCondition:(ProxyAudioDevice::ActiveCondition)condition {
-    AudioDeviceID proxyAudioBox = AudioDevice::audioDeviceIDForBoxUID(CFSTR(kBox_UID));
+    AudioDeviceID box = AudioDevice::audioDeviceIDForBoxUID([self currentBoxUID]);
+    if (box == kAudioObjectUnknown) return;
     AudioDevice::setObjectName(
-        proxyAudioBox,
+        box,
         (__bridge_retained CFStringRef)
             [NSString stringWithFormat:@"outputDeviceActiveCondition=%d", condition]);
 }
@@ -279,6 +298,53 @@ int onDevicesChanged(AudioObjectID inObjectID,
     self.proxiedDeviceIsActiveRadioButton.state = NSControlStateValueOff;
     self.userIsActiveRadioButton.state = NSControlStateValueOff;
     [self setCurrentOutputDeviceActiveCondition:ProxyAudioDevice::ActiveCondition::always];
+}
+
+- (IBAction)deviceSelectorChanged:(id)sender {
+#pragma unused(sender)
+    selectedDevice = (int)self.deviceSelector.selectedSegment + 1;
+    [self reloadCurrentDeviceUI];
+}
+
+- (void)reloadCurrentDeviceUI {
+    self.deviceNameTextField.stringValue = [self currentDeviceName];
+
+    AudioDeviceID box = AudioDevice::audioDeviceIDForBoxUID([self currentBoxUID]);
+    if (box == kAudioObjectUnknown) {
+        self.deviceNameTextField.enabled = NO;
+        self.outputDeviceComboBox.enabled = NO;
+        self.bufferSizeComboBox.enabled = NO;
+        self.proxiedDeviceIsActiveRadioButton.enabled = NO;
+        self.userIsActiveRadioButton.enabled = NO;
+        self.alwaysRadioButton.enabled = NO;
+        return;
+    }
+
+    [self refreshOutputDevices];
+    [self.bufferSizeComboBox selectItemWithObjectValue:[self currentOutputDeviceBufferFrameSize]];
+
+    self.deviceNameTextField.enabled = YES;
+    self.outputDeviceComboBox.enabled = YES;
+    self.bufferSizeComboBox.enabled = YES;
+    self.proxiedDeviceIsActiveRadioButton.enabled = YES;
+    self.userIsActiveRadioButton.enabled = YES;
+    self.alwaysRadioButton.enabled = YES;
+
+    ProxyAudioDevice::ActiveCondition condition = [self currentOutputDeviceActiveCondition];
+
+    if (condition == ProxyAudioDevice::ActiveCondition::proxiedDeviceActive) {
+        self.proxiedDeviceIsActiveRadioButton.state = NSControlStateValueOn;
+        self.userIsActiveRadioButton.state = NSControlStateValueOff;
+        self.alwaysRadioButton.state = NSControlStateValueOff;
+    } else if (condition == ProxyAudioDevice::ActiveCondition::userActive) {
+        self.proxiedDeviceIsActiveRadioButton.state = NSControlStateValueOff;
+        self.userIsActiveRadioButton.state = NSControlStateValueOn;
+        self.alwaysRadioButton.state = NSControlStateValueOff;
+    } else {
+        self.proxiedDeviceIsActiveRadioButton.state = NSControlStateValueOff;
+        self.userIsActiveRadioButton.state = NSControlStateValueOff;
+        self.alwaysRadioButton.state = NSControlStateValueOn;
+    }
 }
 
 @end
