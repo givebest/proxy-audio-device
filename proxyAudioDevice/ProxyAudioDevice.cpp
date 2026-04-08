@@ -5469,7 +5469,7 @@ OSStatus ProxyAudioDevice::outputDeviceIOProc2(AudioDeviceID inDevice,
             smallestFramesToBufferEnd2 = framesToBufferEnd2;
         } else {
             const SInt64 kTargetMargin = 2 * SInt64(currentOutputDeviceBufferFrameSize);
-            inputOutputSampleDelta2 -= (framesToBufferEnd2 - kTargetMargin) * 0.001;
+            inputOutputSampleDelta2 += (framesToBufferEnd2 - kTargetMargin) * 0.001;
             startFrame = inOutputTime->mSampleTime + inputOutputSampleDelta2;
         }
 
@@ -6091,8 +6091,10 @@ OSStatus ProxyAudioDevice::outputDeviceIOProc(AudioDeviceID inDevice,
         if (smallestFramesToBufferEnd == -1) {
             smallestFramesToBufferEnd = framesToBufferEnd;  // first call: initialize
         } else {
+            // EMA drift correction: nudge startFrame toward kTargetMargin behind the write head.
+            // += because larger framesToBufferEnd means we need to advance startFrame (read newer).
             const SInt64 kTargetMargin = 2 * SInt64(currentOutputDeviceBufferFrameSize);
-            inputOutputSampleDelta -= (framesToBufferEnd - kTargetMargin) * 0.001;
+            inputOutputSampleDelta += (framesToBufferEnd - kTargetMargin) * 0.001;
             startFrame = inOutputTime->mSampleTime + inputOutputSampleDelta;
         }
 
