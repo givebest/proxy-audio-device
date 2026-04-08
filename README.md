@@ -1,6 +1,6 @@
 ## Proxy Audio Driver
 
-A HAL virtual audio driver for macOS that sends all output to another audio device. Its main purpose is to make it possible to use macOS's system volume controls, such as the volume menu bar icon or volume keyboard keys, to change the volume of external audio interfaces that don't allow it. It might be useful for something else, too.
+A HAL virtual audio driver for macOS that creates up to two virtual audio devices that send all output to another audio device. Its main purpose is to make it possible to use macOS's system volume controls, such as the volume menu bar icon or volume keyboard keys, to change the volume of external audio interfaces that don't allow it. It might be useful for something else, too.
 
 ### Installation
 
@@ -39,7 +39,7 @@ Run the _Proxy Audio Device Settings_ app to configure your new audio device.
         # macOS >= 14.4
         sudo killall coreaudiod
 
-6. Run Proxy Audio Device Settings to configure the proxy output device's name, which output device the driver will proxy to, and how large you want its audio buffer to be.
+6. Run Proxy Audio Device Settings to configure up to two proxy output devices, set their names, choose which output devices the driver will proxy to, and configure the audio buffer size.
 
 ### Uninstallation
 
@@ -69,4 +69,4 @@ If you make the audio buffer too small then the driver will introduce pops, crac
 
 - Indicator in the settings app for when the proxy audio device overruns its buffer and causes audio artifacts
 - Proxying more than two channels of audio
-- Ability to increase the number of proxy devices
+- Ability to increase the number of proxy devices (currently supports 2)
