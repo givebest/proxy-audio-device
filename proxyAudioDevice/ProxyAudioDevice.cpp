@@ -5467,10 +5467,10 @@ OSStatus ProxyAudioDevice::outputDeviceIOProc2(AudioDeviceID inDevice,
         SInt64 framesToBufferEnd2 = inputBuffer2->mEndFrame - SInt64(startFrame);
         if (smallestFramesToBufferEnd2 == -1) {
             smallestFramesToBufferEnd2 = framesToBufferEnd2;
-        } else {
-            const SInt64 kTargetMargin = 2 * SInt64(currentOutputDeviceBufferFrameSize);
-            inputOutputSampleDelta2 += (framesToBufferEnd2 - kTargetMargin) * 0.001;
+        } else if (framesToBufferEnd2 < smallestFramesToBufferEnd2 && smallestFramesToBufferEnd2 >= 0) {
+            inputOutputSampleDelta2 -= (smallestFramesToBufferEnd2 - framesToBufferEnd2);
             startFrame = inOutputTime->mSampleTime + inputOutputSampleDelta2;
+            smallestFramesToBufferEnd2 = inputBuffer2->mEndFrame - SInt64(startFrame);
         }
 
         bool overrun = inputBuffer2->Fetch(workBuffer2, currentOutputDeviceBufferFrameSize, (SInt64)startFrame);
@@ -6087,15 +6087,18 @@ OSStatus ProxyAudioDevice::outputDeviceIOProc(AudioDeviceID inDevice,
         // EMA-based clock drift compensation: continuously nudge the read position
         // toward a target margin of 2 buffer lengths behind the write head.
         // Alpha = 0.1%/cycle → smooth convergence, no audible jumps.
+        // Clock drift compensation: track the smallest margin we've seen between the
+        // read position and the write head. When the margin shrinks (output running
+        // ahead of input), pull the read position back by the exact deficit so we
+        // never overrun. One-shot correction avoids continuous micro-adjustments that
+        // would introduce audible pitch wobble.
         SInt64 framesToBufferEnd = inputBuffer->mEndFrame - SInt64(startFrame);
         if (smallestFramesToBufferEnd == -1) {
-            smallestFramesToBufferEnd = framesToBufferEnd;  // first call: initialize
-        } else {
-            // EMA drift correction: nudge startFrame toward kTargetMargin behind the write head.
-            // += because larger framesToBufferEnd means we need to advance startFrame (read newer).
-            const SInt64 kTargetMargin = 2 * SInt64(currentOutputDeviceBufferFrameSize);
-            inputOutputSampleDelta += (framesToBufferEnd - kTargetMargin) * 0.001;
+            smallestFramesToBufferEnd = framesToBufferEnd;
+        } else if (framesToBufferEnd < smallestFramesToBufferEnd && smallestFramesToBufferEnd >= 0) {
+            inputOutputSampleDelta -= (smallestFramesToBufferEnd - framesToBufferEnd);
             startFrame = inOutputTime->mSampleTime + inputOutputSampleDelta;
+            smallestFramesToBufferEnd = inputBuffer->mEndFrame - SInt64(startFrame);
         }
 
         bool overrun = inputBuffer->Fetch(workBuffer, currentOutputDeviceBufferFrameSize, (SInt64)startFrame);
